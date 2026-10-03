@@ -208,9 +208,9 @@ public class LearnerHandlerTest extends ZKTestCase {
         peerZxid = 3;
         db.lastProcessedZxid = 1;
         db.committedLog.clear();
-        assertFalse(learnerHandler.syncFollower(peerZxid, leader));
-        // We send TRUNC and forward any packet starting lastProcessedZxid
-        assertOpType(Leader.TRUNC, db.lastProcessedZxid, db.lastProcessedZxid);
+        assertTrue(learnerHandler.syncFollower(peerZxid, leader));
+        assertEquals(0, learnerHandler.getQueuedPackets().size());
+        assertZxidEquals(db.lastProcessedZxid, currentZxid);
         reset();
 
         // Peer is already sync
@@ -252,12 +252,9 @@ public class LearnerHandlerTest extends ZKTestCase {
 
         // Peer has zxid that we have never seen
         peerZxid = 4;
-        assertFalse(learnerHandler.syncFollower(peerZxid, leader));
-        // We send TRUNC to 3 and forward any packet starting 5
-        assertOpType(Leader.TRUNC, 3, 5);
-        // DIFF + 1 proposals + 1 commit
-        assertEquals(3, learnerHandler.getQueuedPackets().size());
-        queuedPacketMatches(new long[]{5});
+        assertTrue(learnerHandler.syncFollower(peerZxid, leader));
+        assertEquals(0, learnerHandler.getQueuedPackets().size());
+        assertZxidEquals(db.lastProcessedZxid, currentZxid);
         reset();
 
         // Peer is within committedLog range
@@ -300,12 +297,9 @@ public class LearnerHandlerTest extends ZKTestCase {
 
         // Peer has zxid that we have never seen
         peerZxid = 4;
-        assertFalse(learnerHandler.syncFollower(peerZxid, leader));
-        // We send TRUNC to 3 and forward any packet starting at maxCommittedLog
-        assertOpType(Leader.TRUNC, 3, db.getmaxCommittedLog());
-        // DIFF + 4 proposals + 4 commit
-        assertEquals(9, learnerHandler.getQueuedPackets().size());
-        queuedPacketMatches(new long[]{5, 6, 7, 8});
+        assertTrue(learnerHandler.syncFollower(peerZxid, leader));
+        assertEquals(0, learnerHandler.getQueuedPackets().size());
+        assertZxidEquals(db.lastProcessedZxid, currentZxid);
         reset();
 
         // Peer zxid is in txnlog range
@@ -363,13 +357,9 @@ public class LearnerHandlerTest extends ZKTestCase {
 
         // Peer has zxid that we have never seen
         peerZxid = 4;
-        assertFalse(learnerHandler.syncFollower(peerZxid, leader));
-        // We send TRUNC to 3 and forward any packet starting at
-        // lastProcessedZxid
-        assertOpType(Leader.TRUNC, 3, db.lastProcessedZxid);
-        // DIFF + 3 proposals + 3 commit
-        assertEquals(7, learnerHandler.getQueuedPackets().size());
-        queuedPacketMatches(new long[]{5, 6, 7});
+        assertTrue(learnerHandler.syncFollower(peerZxid, leader));
+        assertEquals(0, learnerHandler.getQueuedPackets().size());
+        assertZxidEquals(db.lastProcessedZxid, currentZxid);
         reset();
 
         // Peer has zxid in txnlog range
@@ -415,12 +405,9 @@ public class LearnerHandlerTest extends ZKTestCase {
 
         // Peer has zxid that we have never seen
         peerZxid = getZxid(0xf, 4);
-        assertFalse(learnerHandler.syncFollower(peerZxid, leader));
-        // We send TRUNC to 3 and forward any packet starting at maxCommittedLog
-        assertOpType(Leader.TRUNC, getZxid(0xf, 3), db.getmaxCommittedLog());
-        // DIFF + 4 proposals + 4 commit
-        assertEquals(9, learnerHandler.getQueuedPackets().size());
-        queuedPacketMatches(new long[]{getZxid(0xf, 5), getZxid(0xf, 6), getZxid(0xf, 7), getZxid(0xf, 8)});
+        assertTrue(learnerHandler.syncFollower(peerZxid, leader));
+        assertEquals(0, learnerHandler.getQueuedPackets().size());
+        assertZxidEquals(db.lastProcessedZxid, currentZxid);
         reset();
 
         // Peer zxid is in txnlog range
