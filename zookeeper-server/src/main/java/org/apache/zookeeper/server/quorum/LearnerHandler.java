@@ -786,8 +786,7 @@ public class LearnerHandler extends ZooKeeperThread {
          * The learner will set its lastProcessedZxid to the same value if
          * it get DIFF or SNAP from the learnerMaster. If the same learner come
          * back to sync with learnerMaster using this zxid, we will never find this
-         * zxid in our history. In this case, we will ignore TRUNC logic and
-         * always send DIFF if we have old enough history
+         * zxid in our history. In this case, send DIFF if the history is old enough.
          */
         boolean isPeerNewEpochZxid = (peerLastZxid & 0xffffffffL) == 0;
         // Keep track of the latest zxid which already queued
@@ -832,12 +831,10 @@ public class LearnerHandler extends ZooKeeperThread {
              *
              * 1. Force sending snapshot (for testing purpose)
              * 2. Peer and learnerMaster is already sync, send empty diff
-             * 3. Follower has txn that we haven't seen. This may be old leader
-             *    so we need to send TRUNC. However, if peer has newEpochZxid,
-             *    we cannot send TRUNC since the follower has no txnlog
+             * 3. Follower has a transaction absent from our history; send SNAP.
              * 4. Follower is within committedLog range or already in-sync.
-             *    We may need to send DIFF or TRUNC depending on follower's zxid
-             *    We always send empty DIFF if follower is already in-sync
+             *    Send DIFF when its zxid matches history or marks a new epoch;
+             *    otherwise replace its divergent state with SNAP.
              * 5. Follower missed the committedLog. We will try to use on-disk
              *    txnlog + committedLog to sync with follower. If that fail,
              *    we will send snapshot
@@ -856,15 +853,9 @@ public class LearnerHandler extends ZooKeeperThread {
                 needOpPacket = false;
                 needSnap = false;
             } else if (peerLastZxid > maxCommittedLog && !isPeerNewEpochZxid) {
-                // Newer than committedLog, send trunc and done
-                LOG.debug(
-                    "Sending TRUNC to follower zxidToSend=0x{} for peer sid:{}",
-                    Long.toHexString(maxCommittedLog),
-                    getSid());
-                queueOpPacket(Leader.TRUNC, maxCommittedLog);
-                currentZxid = maxCommittedLog;
-                needOpPacket = false;
-                needSnap = false;
+                // Local snapshots can contain transactions beyond their filename zxid.
+                // Replace divergent history with the learnerMaster's authoritative state.
+                LOG.info("Using snapshot for peer sid: {} ahead of committed history", getSid());
             } else if ((maxCommittedLog >= peerLastZxid) && (minCommittedLog <= peerLastZxid)) {
                 // Follower is within commitLog range
                 LOG.info("Using committedLog for peer sid: {}", getSid());
@@ -917,7 +908,12 @@ public class LearnerHandler extends ZooKeeperThread {
                     Long.toHexString(peerLastZxid),
                     txnLogSyncEnabled);
             }
+            if (needOpPacket && !needSnap) {
+                needSnap = true;
+            }
             if (needSnap) {
+                queuedPackets.clear();
+                queuedPacketsSize.set(0);
                 currentZxid = db.getDataTreeLastProcessedZxid();
             }
 
@@ -925,13 +921,6 @@ public class LearnerHandler extends ZooKeeperThread {
             leaderLastZxid = learnerMaster.startForwarding(this, currentZxid);
         } finally {
             rl.unlock();
-        }
-
-        if (needOpPacket && !needSnap) {
-            // This should never happen, but we should fall back to sending
-            // snapshot just in case.
-            LOG.error("Unhandled scenario for peer sid: {} fall back to use snapshot",  getSid());
-            needSnap = true;
         }
 
         return needSnap;
@@ -951,9 +940,6 @@ public class LearnerHandler extends ZooKeeperThread {
     protected long queueCommittedProposals(Iterator<Proposal> itr, long peerLastZxid, Long maxZxid, Long lastCommittedZxid) {
         boolean isPeerNewEpochZxid = (peerLastZxid & 0xffffffffL) == 0;
         long queuedZxid = peerLastZxid;
-        // as we look through proposals, this variable keeps track of previous
-        // proposal Id.
-        long prevProposalZxid = -1;
         while (itr.hasNext()) {
             Proposal propose = itr.next();
 
@@ -965,12 +951,10 @@ public class LearnerHandler extends ZooKeeperThread {
 
             // skip the proposals the peer already has
             if (packetZxid < peerLastZxid) {
-                prevProposalZxid = packetZxid;
                 continue;
             }
 
-            // If we are sending the first packet, figure out whether to trunc
-            // or diff
+            // Start DIFF only when the peer's history boundary is known.
             if (needOpPacket) {
 
                 // Send diff when we see the follower's zxid in our history
@@ -993,22 +977,9 @@ public class LearnerHandler extends ZooKeeperThread {
                     queueOpPacket(Leader.DIFF, lastCommittedZxid);
                     needOpPacket = false;
                 } else if (packetZxid > peerLastZxid) {
-                    // Peer have some proposals that the learnerMaster hasn't seen yet
-                    // it may used to be a leader
-                    if (ZxidUtils.getEpochFromZxid(packetZxid) != ZxidUtils.getEpochFromZxid(peerLastZxid)) {
-                        // We cannot send TRUNC that cross epoch boundary.
-                        // The learner will crash if it is asked to do so.
-                        // We will send snapshot this those cases.
-                        LOG.warn("Cannot send TRUNC to peer sid: " + getSid() + " peer zxid is from different epoch");
-                        return queuedZxid;
-                    }
-
-                    LOG.info(
-                        "Sending TRUNC zxid=0x{}  for peer sid: {}",
-                        Long.toHexString(prevProposalZxid),
-                        getSid());
-                    queueOpPacket(Leader.TRUNC, prevProposalZxid);
-                    needOpPacket = false;
+                    // Rolling back a fuzzy local snapshot cannot reconstruct this boundary.
+                    LOG.info("Using snapshot for peer sid: {} with divergent history", getSid());
+                    return queuedZxid;
                 }
             }
 
