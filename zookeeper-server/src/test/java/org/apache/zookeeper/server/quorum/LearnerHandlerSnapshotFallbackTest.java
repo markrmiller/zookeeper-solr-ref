@@ -18,8 +18,13 @@
 
 package org.apache.zookeeper.server.quorum;
 
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.anyLong;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 import java.io.BufferedInputStream;
 import java.io.ByteArrayInputStream;
 import java.net.Socket;
@@ -49,7 +54,10 @@ class LearnerHandlerSnapshotFallbackTest {
         Socket socket = mock(Socket.class);
         when(socket.getRemoteSocketAddress()).thenReturn(new java.net.InetSocketAddress("127.0.0.1", 1));
         handler = new LearnerHandler(socket, new BufferedInputStream(new ByteArrayInputStream(new byte[0])), leader) {
-            @Override protected boolean shouldSendMarkerPacketForLogging() { return false; }
+            @Override
+            protected boolean shouldSendMarkerPacketForLogging() {
+                return false;
+            }
         };
     }
 
@@ -83,21 +91,31 @@ class LearnerHandlerSnapshotFallbackTest {
 
     @Test void divergentDiskHistoryUsesSnapshot() throws Exception {
         db.lastProcessedZxid = 9L;
-        for (long zxid : new long[]{2L, 3L, 5L, 6L, 7L, 8L, 9L}) db.txnLog.add(proposal(zxid));
-        for (long zxid : new long[]{6L, 7L, 8L}) db.committedLog.add(proposal(zxid));
+        for (long zxid : new long[]{2L, 3L, 5L, 6L, 7L, 8L, 9L}) {
+            db.txnLog.add(proposal(zxid));
+        }
+        for (long zxid : new long[]{6L, 7L, 8L}) {
+            db.committedLog.add(proposal(zxid));
+        }
         snapshot(4L);
     }
 
     @Test void incompleteDiskHistoryClearsQueuedDiffBeforeForwarding() throws Exception {
         db.lastProcessedZxid = 9L;
-        for (long zxid : new long[]{2L, 3L, 4L}) db.txnLog.add(proposal(zxid));
-        for (long zxid : new long[]{7L, 8L}) db.committedLog.add(proposal(zxid));
+        for (long zxid : new long[]{2L, 3L, 4L}) {
+            db.txnLog.add(proposal(zxid));
+        }
+        for (long zxid : new long[]{7L, 8L}) {
+            db.committedLog.add(proposal(zxid));
+        }
         snapshot(3L);
     }
 
     @Test void matchingHistoryKeepsDiffAndExactProposalSequence() throws Exception {
         db.lastProcessedZxid = 9L;
-        for (long zxid : new long[]{2L, 3L, 5L, 6L, 7L, 8L}) db.committedLog.add(proposal(zxid));
+        for (long zxid : new long[]{2L, 3L, 5L, 6L, 7L, 8L}) {
+            db.committedLog.add(proposal(zxid));
+        }
         assertFalse(handler.syncFollower(3L, leader));
         assertEquals(8L, forwardingZxid);
         assertTrue(forwardingUnderLock);
