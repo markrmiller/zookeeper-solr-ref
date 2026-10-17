@@ -13,9 +13,13 @@ import xml.etree.ElementTree as ET
 import zipfile
 
 BASE = "293c895a8d966a3ecb92872be4a1daf87d725da2"
-SOURCE = "zookeeper-server/src/main/java/org/apache/zookeeper/server/quorum/LearnerHandler.java"
-SOURCE_SHA256 = "c2fde68554ba0c75f5fac7f36d717974a3e7db4c16e23d0a25f4918d000a9f7e"
-VERSION = "3.9.5-solr-ref-4798.27c88d635a5d"
+SOURCES = {
+    "zookeeper-server/src/main/java/org/apache/zookeeper/server/quorum/LearnerHandler.java":
+        "c2fde68554ba0c75f5fac7f36d717974a3e7db4c16e23d0a25f4918d000a9f7e",
+    "zookeeper-server/src/main/java/org/apache/zookeeper/server/quorum/FastLeaderElection.java":
+        "da2ba3a7d565c390daae509f66aa6f6890d2f49f4ecaa1ee468aadcb56a60932",
+}
+VERSION = "3.9.5-solr-ref-4798-fle.5330884b1d66"
 REPOSITORY = "markrmiller/zookeeper-solr-ref"
 TAG = "dependency-zookeeper-" + VERSION
 BUILD_TIME = "2026-10-02 22:00 UTC"
@@ -28,6 +32,12 @@ def run(args, cwd, env=None):
 
 def digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def verify_sources(root):
+    for source, expected in SOURCES.items():
+        if digest(root / source) != expected:
+            raise ValueError("Correction source differs from the native proof: " + source)
 
 
 def ivy_descriptor(effective, destination):
@@ -72,8 +82,7 @@ def main():
         raise ValueError("Build requires a clean committed source checkout")
     head = run(["git", "rev-parse", "HEAD"], root)
     subprocess.run(["git", "merge-base", "--is-ancestor", BASE, head], cwd=root, check=True)
-    if digest(root / SOURCE) != SOURCE_SHA256:
-        raise ValueError("Correction source differs from the native proof")
+    verify_sources(root)
     output = args.output.resolve()
     if output.exists() or output.is_relative_to(root):
         raise ValueError("Output must be a new directory outside the source checkout")
@@ -109,7 +118,7 @@ def main():
     with (output / "source.tar").open("wb") as source:
         subprocess.run(["git", "archive", "--format=tar", "--prefix=zookeeper-solr-ref/", head], cwd=root, stdout=source, check=True)
     shutil.copyfile(Path(__file__), output / "build_release.py")
-    provenance = {"repository": REPOSITORY, "tag": TAG, "sourceCommit": head, "upstreamCommit": BASE, "productionSourceSha256": SOURCE_SHA256, "version": VERSION, "juteVersion": "3.9.5", "javaVersion": "25.0.4.1", "mavenVersion": "3.9.9", "buildTime": BUILD_TIME, "outputTimestamp": 1770840858, "buildGoals": ["clean package", "org.apache.maven.plugins:maven-help-plugin:3.5.2:effective-pom"], "validation": "Package skips tests. Native regression and control results must be verified separately before publication."}
+    provenance = {"repository": REPOSITORY, "tag": TAG, "sourceCommit": head, "upstreamCommit": BASE, "productionSourcesSha256": SOURCES, "version": VERSION, "juteVersion": "3.9.5", "javaVersion": "25.0.4.1", "mavenVersion": "3.9.9", "buildTime": BUILD_TIME, "outputTimestamp": 1770840858, "buildGoals": ["clean package", "org.apache.maven.plugins:maven-help-plugin:3.5.2:effective-pom"], "validation": "Package skips tests. Native regression and control results must be verified separately before publication."}
     (output / "provenance.json").write_text(json.dumps(provenance, indent=2, sort_keys=True) + "\n")
     (output / "SHA256SUMS").write_text("".join(digest(path) + "  " + path.name + "\n" for path in sorted(output.iterdir())))
     print(json.dumps({"sourceCommit": head, "output": str(output), "jarSha256": digest(output / jar.name)}))

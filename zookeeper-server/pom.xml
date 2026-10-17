@@ -27,7 +27,7 @@
   </parent>
 
   <artifactId>zookeeper</artifactId>
-  <version>3.9.5-solr-ref-4798.27c88d635a5d</version>
+  <version>3.9.5-solr-ref-4798-fle.5330884b1d66</version>
   <packaging>jar</packaging>
   <name>Apache ZooKeeper - Server</name>
   <description>ZooKeeper server</description>
