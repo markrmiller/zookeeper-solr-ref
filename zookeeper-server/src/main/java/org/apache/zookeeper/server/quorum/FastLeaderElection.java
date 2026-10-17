@@ -435,12 +435,14 @@ public class FastLeaderElection implements Election {
                                  */
                                 Vote current = self.getCurrentVote();
                                 if (ackstate == QuorumPeer.ServerState.LOOKING) {
-                                    if (self.leader != null) {
+                                    // The peer can clear its leader while this notification is processed.
+                                    Leader leader = self.leader;
+                                    if (leader != null) {
                                         if (leadingVoteSet != null) {
-                                            self.leader.setLeadingVoteSet(leadingVoteSet);
+                                            leader.setLeadingVoteSet(leadingVoteSet);
                                             leadingVoteSet = null;
                                         }
-                                        self.leader.reportLookingSid(response.sid);
+                                        leader.reportLookingSid(response.sid);
                                     }
 
 
